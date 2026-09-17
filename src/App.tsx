@@ -1,8 +1,7 @@
 import { useTetris } from './hooks/useTetris';
 import { TETROMINOS, TetrominoType, BOARD_WIDTH, BOARD_HEIGHT } from './constants';
 import FeedbackWidget from './components/FeedbackWidget';
-import { useSwipe } from './hooks/useSwipe';
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 function NextPieceDisplay({ type }: { type: TetrominoType }) {
   const tetromino = TETROMINOS[type];
@@ -79,32 +78,7 @@ function App() {
   } = useTetris();
 
   const cellSize = useCellSize();
-  const boardRef = useRef<HTMLDivElement>(null);
   const [activeButton, setActiveButton] = useState<string | null>(null);
-  const [showSwipeHint, setShowSwipeHint] = useState(true);
-
-  // Свайпы по игровому полю
-  const swipeCallbacks = useMemo(
-    () => ({
-      onSwipeLeft: moveLeft,
-      onSwipeRight: moveRight,
-      onSwipeDown: hardDrop,
-      onSwipeUp: rotate,
-      onTap: rotate,
-    }),
-    [moveLeft, moveRight, hardDrop, rotate]
-  );
-  const swipeRef = useSwipe(swipeCallbacks);
-
-  // Подсказка о свайпах скрывается после начала игры
-  useEffect(() => {
-    if (gameState === 'playing') {
-      const timer = setTimeout(() => setShowSwipeHint(false), 4000);
-      return () => clearTimeout(timer);
-    } else {
-      setShowSwipeHint(true);
-    }
-  }, [gameState]);
 
   // Обработка нажатий кнопок с визуальной обратной связью
   const handleButtonPress = useCallback((name: string, action: () => void) => {
@@ -141,13 +115,7 @@ function App() {
 
       <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center md:items-start">
         {/* Game Board */}
-        <div
-          ref={(el) => {
-            (boardRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-            (swipeRef as React.MutableRefObject<HTMLElement | null>).current = el;
-          }}
-          className="relative touch-none"
-        >
+        <div className="relative">
           <div
             className="border-2 border-purple-500 rounded-lg overflow-hidden shadow-2xl shadow-purple-500/20"
             style={{
@@ -178,21 +146,6 @@ function App() {
               </div>
             ))}
           </div>
-
-          {/* Swipe hint overlay */}
-          {gameState === 'playing' && showSwipeHint && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="bg-black/60 backdrop-blur-sm rounded-xl px-4 py-3 text-center animate-pulse">
-                <p className="text-white text-xs md:text-sm">
-                  👆 Тап — поворот
-                  <br />
-                  👈 👉 Свайп — движение
-                  <br />
-                  👇 Свайп вниз — бросок
-                </p>
-              </div>
-            </div>
-          )}
 
           {/* Overlays */}
           {gameState === 'idle' && (
