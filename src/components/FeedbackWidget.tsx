@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 
 // Замените эту ссылку на URL вашей Google формы (режим "встроить")
-const GOOGLE_FORM_URL =
-  'https://docs.google.com/forms/d/e/1FAIpQLSe_example_form_id/viewform?embedded=true';
+const GOOGLE_FORM_URL = 'https://forms.gle/xccncQTp9cicgfnJ6?embedded=true';
 
 const FeedbackWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
