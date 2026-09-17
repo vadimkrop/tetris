@@ -1,5 +1,6 @@
 import { useTetris } from './hooks/useTetris';
 import { TETROMINOS, TetrominoType, BOARD_WIDTH, BOARD_HEIGHT } from './constants';
+import FeedbackWidget from './components/FeedbackWidget';
 
 function NextPieceDisplay({ type }: { type: TetrominoType }) {
   const tetromino = TETROMINOS[type];
@@ -229,6 +230,9 @@ function App() {
           <span className="text-purple-300 font-semibold">P / Esc</span> — пауза
         </p>
       </div>
+
+      {/* Feedback Widget */}
+      <FeedbackWidget />
     </div>
   );
 }
