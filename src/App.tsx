@@ -1,6 +1,11 @@
 import { useTetris } from './hooks/useTetris';
 import { TETROMINOS, TetrominoType, BOARD_WIDTH, BOARD_HEIGHT } from './constants';
 import FeedbackWidget from './components/FeedbackWidget';
+import TutorialModal from './components/TutorialModal';
+import LineClearEffect from './components/LineClearEffect';
+import MultiplayerMenu from './components/MultiplayerMenu';
+import OpponentView from './components/OpponentView';
+import { useMultiplayer } from './hooks/useMultiplayer';
 import { useEffect, useState, useCallback } from 'react';
 
 function NextPieceDisplay({ type }: { type: TetrominoType }) {
@@ -68,6 +73,7 @@ function App() {
     score,
     lines,
     level,
+    clearingRows,
     startGame,
     togglePause,
     moveLeft,
@@ -79,6 +85,46 @@ function App() {
 
   const cellSize = useCellSize();
   const [activeButton, setActiveButton] = useState<string | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [showMultiplayer, setShowMultiplayer] = useState(false);
+
+  const {
+    status: multiplayerStatus,
+    roomCode,
+    opponentState,
+    errorMessage,
+    createRoom,
+    joinRoom,
+    sendState,
+    sendGameOver,
+    disconnect,
+  } = useMultiplayer();
+
+  // Синхронизация состояния с противником
+  useEffect(() => {
+    if (multiplayerStatus === 'connected' && gameState === 'playing') {
+      // Конвертируем board в числовой формат
+      const numericBoard = board.map((row) =>
+        row.map((cell) => (cell.filled ? 1 : 0))
+      );
+
+      sendState({
+        score,
+        lines,
+        level,
+        board: numericBoard,
+        isAlive: true,
+        nextPiece: nextPiece,
+      });
+    }
+  }, [board, score, lines, level, gameState, nextPiece, multiplayerStatus, sendState]);
+
+  // Отправить game over
+  useEffect(() => {
+    if (multiplayerStatus === 'connected' && gameState === 'gameover') {
+      sendGameOver();
+    }
+  }, [gameState, multiplayerStatus, sendGameOver]);
 
   // Обработка нажатий кнопок с визуальной обратной связью
   const handleButtonPress = useCallback((name: string, action: () => void) => {
@@ -89,10 +135,46 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex flex-col items-center p-2 md:p-4 select-none overflow-hidden">
-      {/* Title */}
-      <h1 className="text-2xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 mb-2 md:mb-6 tracking-wider">
-        ТЕТРИС
-      </h1>
+      {/* Header with Title and Tutorial Button */}
+      <div className="w-full max-w-4xl flex items-center justify-between mb-4 md:mb-6 px-2">
+        <h1 className="text-2xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 tracking-wider">
+          ТЕТРИС
+        </h1>
+        
+        {/* Header Buttons */}
+        <div className="flex items-center gap-2">
+          {/* Multiplayer Button */}
+          <button
+            onClick={() => setShowMultiplayer(true)}
+            className="relative group"
+            aria-label="Мультиплеер"
+          >
+            <span className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-30" />
+            <div className="relative flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold rounded-full hover:from-green-400 hover:to-emerald-400 transition-all transform hover:scale-110 shadow-lg shadow-green-500/50 text-sm md:text-base">
+              <span className="text-lg md:text-xl">🎮</span>
+              <span className="hidden sm:inline text-xs md:text-sm">
+                {multiplayerStatus === 'connected' ? 'В игре' : 'Мультиплеер'}
+              </span>
+              {multiplayerStatus === 'connected' && (
+                <span className="w-2 h-2 bg-green-300 rounded-full animate-pulse" />
+              )}
+            </div>
+          </button>
+
+          {/* Tutorial Button */}
+          <button
+            onClick={() => setShowTutorial(true)}
+            className="relative group"
+            aria-label="Как играть"
+          >
+            <span className="absolute inset-0 rounded-full bg-blue-500 animate-ping opacity-30" />
+            <div className="relative flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-full hover:from-blue-400 hover:to-cyan-400 transition-all transform hover:scale-110 shadow-lg shadow-blue-500/50 text-sm md:text-base">
+              <span className="text-lg md:text-xl">📖</span>
+              <span className="hidden sm:inline text-xs md:text-sm">Как играть</span>
+            </div>
+          </button>
+        </div>
+      </div>
 
       {/* Mobile Stats Bar */}
       <div className="md:hidden w-full max-w-sm flex justify-between items-center mb-2 px-2 gap-2">
@@ -113,37 +195,62 @@ function App() {
         </div>
       </div>
 
+      {/* Opponent View (Mobile) */}
+      {multiplayerStatus === 'connected' && (
+        <div className="md:hidden w-full max-w-sm mb-2 px-2">
+          <OpponentView opponentState={opponentState} isMobile={true} />
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center md:items-start">
         {/* Game Board */}
         <div className="relative">
           <div
-            className="border-2 border-purple-500 rounded-lg overflow-hidden shadow-2xl shadow-purple-500/20"
+            className="border-2 border-purple-500 rounded-lg overflow-hidden shadow-2xl shadow-purple-500/20 relative"
             style={{
               width: BOARD_WIDTH * cellSize,
               height: BOARD_HEIGHT * cellSize,
             }}
           >
-            {board.map((row, rowIndex) => (
-              <div key={rowIndex} className="flex">
-                {row.map((cell, colIndex) => (
-                  <div
-                    key={colIndex}
-                    className="border border-gray-800/50"
-                    style={{
-                      width: cellSize,
-                      height: cellSize,
-                      backgroundColor: cell.filled
-                        ? cell.color
-                        : cell.color
-                        ? cell.color
-                        : 'rgba(17, 24, 39, 0.8)',
-                      boxShadow: cell.filled
-                        ? `inset 0 0 6px rgba(255,255,255,0.3), inset 0 -2px 4px rgba(0,0,0,0.3)`
-                        : 'none',
-                    }}
-                  />
-                ))}
-              </div>
+            {board.map((row, rowIndex) => {
+              const isClearing = clearingRows.includes(rowIndex);
+              return (
+                <div key={rowIndex} className="flex">
+                  {row.map((cell, colIndex) => (
+                    <div
+                      key={colIndex}
+                      className={`border border-gray-800/50 ${isClearing ? 'animate-line-clear' : ''}`}
+                      style={{
+                        width: cellSize,
+                        height: cellSize,
+                        backgroundColor: isClearing
+                          ? '#ffffff'
+                          : cell.filled
+                          ? cell.color
+                          : cell.color
+                          ? cell.color
+                          : 'rgba(17, 24, 39, 0.8)',
+                        boxShadow: isClearing
+                          ? `0 0 20px #ffffff, 0 0 40px #ffffff, inset 0 0 10px rgba(255,255,255,0.8)`
+                          : cell.filled
+                          ? `inset 0 0 6px rgba(255,255,255,0.3), inset 0 -2px 4px rgba(0,0,0,0.3)`
+                          : 'none',
+                        transition: isClearing ? 'all 0.2s ease-out' : 'none',
+                      }}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+
+            {/* Эффекты очистки линий */}
+            {clearingRows.map((rowIndex) => (
+              <LineClearEffect
+                key={rowIndex}
+                rowIndex={rowIndex}
+                cellSize={cellSize}
+                boardWidth={BOARD_WIDTH}
+              />
             ))}
           </div>
 
@@ -176,7 +283,7 @@ function App() {
             </div>
           )}
 
-          {gameState === 'gameover' && (
+          {gameState === 'gameover' && multiplayerStatus !== 'connected' && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80 rounded-lg">
               <div className="text-center px-4">
                 <p className="text-red-400 text-2xl md:text-3xl font-bold mb-2">ИГРА ОКОНЧЕНА</p>
@@ -216,6 +323,7 @@ function App() {
               Уровень
             </h3>
             <p className="text-cyan-400 text-2xl font-bold font-mono">{level}</p>
+            <p className="text-gray-400 text-xs mt-1">Скорость: {level}x</p>
           </div>
 
           <div className="bg-gray-800/80 backdrop-blur rounded-lg p-4 border border-purple-500/30">
@@ -232,6 +340,11 @@ function App() {
             >
               ⏸ Пауза
             </button>
+          )}
+
+          {/* Opponent View (Desktop) */}
+          {multiplayerStatus === 'connected' && (
+            <OpponentView opponentState={opponentState} isMobile={false} />
           )}
         </div>
       </div>
@@ -296,17 +409,98 @@ function App() {
       )}
 
       {/* Desktop Instructions */}
-      <div className="mt-4 md:mt-6 text-center text-gray-400 text-sm hidden md:block">
-        <p className="mb-1">
-          <span className="text-purple-300 font-semibold">←→</span> — движение{' '}
-          <span className="text-purple-300 font-semibold">↑</span> — поворот{' '}
-          <span className="text-purple-300 font-semibold">↓</span> — ускорение{' '}
-          <span className="text-purple-300 font-semibold">Пробел</span> — бросок
-        </p>
-        <p>
-          <span className="text-purple-300 font-semibold">P / Esc</span> — пауза
-        </p>
+      <div className="mt-4 md:mt-6 hidden md:block">
+        <div className="bg-gray-800/60 backdrop-blur rounded-xl p-4 border border-purple-500/30 shadow-lg">
+          <h3 className="text-purple-300 font-semibold mb-3 text-center text-sm uppercase tracking-wider flex items-center justify-center gap-2">
+            <span>🎮</span> Управление
+          </h3>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <kbd className="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs font-mono">←→</kbd>
+              <span className="text-gray-300">Движение</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs font-mono">↑</kbd>
+              <span className="text-gray-300">Поворот</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs font-mono">↓</kbd>
+              <span className="text-gray-300">Ускорение</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs font-mono">Space</kbd>
+              <span className="text-gray-300">Бросок</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs font-mono">P / Esc</kbd>
+              <span className="text-gray-300">Пауза</span>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Tutorial Modal */}
+      <TutorialModal isOpen={showTutorial} onClose={() => setShowTutorial(false)} />
+
+      {/* Multiplayer Menu */}
+      {showMultiplayer && (
+        <MultiplayerMenu
+          status={multiplayerStatus}
+          roomCode={roomCode}
+          errorMessage={errorMessage}
+          onCreateRoom={createRoom}
+          onJoinRoom={joinRoom}
+          onDisconnect={disconnect}
+          onClose={() => setShowMultiplayer(false)}
+        />
+      )}
+
+      {/* Game Over with Winner */}
+      {gameState === 'gameover' && multiplayerStatus === 'connected' && opponentState && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+          <div className="bg-gray-900 border-2 border-purple-500 rounded-2xl p-8 max-w-md mx-4 text-center">
+            {opponentState.isAlive ? (
+              <>
+                <div className="text-6xl mb-4">😔</div>
+                <h2 className="text-3xl font-bold text-red-400 mb-2">Поражение</h2>
+                <p className="text-gray-300 mb-4">Противник оказался быстрее!</p>
+              </>
+            ) : (
+              <>
+                <div className="text-6xl mb-4">🏆</div>
+                <h2 className="text-3xl font-bold text-green-400 mb-2">Победа!</h2>
+                <p className="text-gray-300 mb-4">Вы обыграли противника!</p>
+              </>
+            )}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-gray-800 rounded-lg p-3">
+                <div className="text-xs text-gray-400 uppercase mb-1">Ваши очки</div>
+                <div className="text-2xl font-bold text-white font-mono">{score.toLocaleString()}</div>
+              </div>
+              <div className="bg-gray-800 rounded-lg p-3">
+                <div className="text-xs text-gray-400 uppercase mb-1">Очки противника</div>
+                <div className="text-2xl font-bold text-white font-mono">
+                  {opponentState.score.toLocaleString()}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={startGame}
+                className="flex-1 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-lg hover:from-green-400 hover:to-emerald-500 transition-all"
+              >
+                🔄 Реванш
+              </button>
+              <button
+                onClick={disconnect}
+                className="flex-1 px-6 py-3 bg-gray-700 text-white font-bold rounded-lg hover:bg-gray-600 transition-all"
+              >
+                Выйти
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Feedback Widget */}
       <FeedbackWidget />

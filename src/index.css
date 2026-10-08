@@ -1,1 +1,28 @@
 @import "tailwindcss";
+
+@keyframes line-clear {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+  25% {
+    transform: scale(1.1);
+    opacity: 1;
+    filter: brightness(2);
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+    filter: brightness(3);
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0;
+    filter: brightness(5);
+  }
+}
+
+.animate-line-clear {
+  animation: line-clear 0.4s ease-out forwards;
+}

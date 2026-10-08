@@ -72,6 +72,7 @@ export const useTetris = () => {
   const [lines, setLines] = useState(0);
   const [level, setLevel] = useState(1);
   const [ghostY, setGhostY] = useState(0);
+  const [clearingRows, setClearingRows] = useState<number[]>([]);
 
   const gameLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const boardRef = useRef(board);
@@ -106,7 +107,14 @@ export const useTetris = () => {
     return newBoard;
   }, []);
 
-  const clearLines = useCallback((currentBoard: Board): { newBoard: Board; clearedLines: number } => {
+  const clearLines = useCallback((currentBoard: Board): { newBoard: Board; clearedLines: number; clearedRowIndices: number[] } => {
+    const clearedRowIndices: number[] = [];
+    currentBoard.forEach((row, index) => {
+      if (row.every((cell) => cell.filled)) {
+        clearedRowIndices.push(index);
+      }
+    });
+    
     const newBoard = currentBoard.filter((row) =>
       row.some((cell) => !cell.filled)
     );
@@ -114,7 +122,7 @@ export const useTetris = () => {
     const emptyRows = Array.from({ length: clearedLines }, () =>
       Array.from({ length: BOARD_WIDTH }, () => ({ filled: false, color: '' }))
     );
-    return { newBoard: [...emptyRows, ...newBoard], clearedLines };
+    return { newBoard: [...emptyRows, ...newBoard], clearedLines, clearedRowIndices };
   }, []);
 
   const spawnPiece = useCallback(() => {
@@ -140,25 +148,39 @@ export const useTetris = () => {
     if (!currentPieceRef.current) return;
 
     const newBoard = placePiece(boardRef.current, currentPieceRef.current);
-    const { newBoard: clearedBoard, clearedLines } = clearLines(newBoard);
-
-    setBoard(clearedBoard);
-    boardRef.current = clearedBoard;
+    const { newBoard: clearedBoard, clearedLines, clearedRowIndices } = clearLines(newBoard);
 
     if (clearedLines > 0) {
-      const pointsKey = clearedLines as keyof typeof POINTS;
-      const earnedPoints = (POINTS[pointsKey] || 0) * level;
-      setScore((prev) => prev + earnedPoints);
-      setLines((prev) => {
-        const newLines = prev + clearedLines;
-        const newLevel = Math.floor(newLines / LINES_PER_LEVEL) + 1;
-        setLevel(Math.min(newLevel, 10));
-        return newLines;
-      });
+      // Запускаем анимацию очистки
+      setClearingRows(clearedRowIndices);
+      
+      // Через 400мс очищаем линии
+      setTimeout(() => {
+        setBoard(clearedBoard);
+        boardRef.current = clearedBoard;
+        setClearingRows([]);
+        
+        const pointsKey = clearedLines as keyof typeof POINTS;
+        const earnedPoints = (POINTS[pointsKey] || 0) * level;
+        setScore((prev) => prev + earnedPoints);
+        setLines((prev) => {
+          const newLines = prev + clearedLines;
+          const newLevel = Math.floor(newLines / LINES_PER_LEVEL) + 1;
+          // Уровень обновляется, но скорость применится только к следующей фигуре
+          setLevel(Math.min(newLevel, 10));
+          return newLines;
+        });
+        
+        setCurrentPiece(null);
+        // Спавн новой фигуры - здесь применится новый уровень скорости
+        setTimeout(() => spawnPiece(), 0);
+      }, 400);
+    } else {
+      setBoard(clearedBoard);
+      boardRef.current = clearedBoard;
+      setCurrentPiece(null);
+      setTimeout(() => spawnPiece(), 0);
     }
-
-    setCurrentPiece(null);
-    setTimeout(() => spawnPiece(), 0);
   }, [placePiece, clearLines, level, spawnPiece]);
 
   const moveDown = useCallback(() => {
@@ -355,6 +377,7 @@ export const useTetris = () => {
     score,
     lines,
     level,
+    clearingRows,
     startGame,
     togglePause,
     moveLeft,
