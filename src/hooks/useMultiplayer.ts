@@ -1,15 +1,19 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 // Инициализация Supabase
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase credentials not found in environment variables');
+const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+
+export const supabase: SupabaseClient | null = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
+
+if (!isSupabaseConfigured) {
+  console.warn('Supabase не настроен. Мультиплеер будет недоступен.');
 }
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export type PlayerState = {
   score: number;
@@ -20,7 +24,7 @@ export type PlayerState = {
   nextPiece: string;
 };
 
-export type MultiplayerStatus = 'idle' | 'connecting' | 'waiting' | 'connected' | 'disconnected' | 'error';
+export type MultiplayerStatus = 'idle' | 'connecting' | 'waiting' | 'connected' | 'disconnected' | 'error' | 'not_configured';
 
 const generateRoomCode = (): string => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -32,7 +36,9 @@ const generateRoomCode = (): string => {
 };
 
 export const useMultiplayer = () => {
-  const [status, setStatus] = useState<MultiplayerStatus>('idle');
+  const [status, setStatus] = useState<MultiplayerStatus>(
+    isSupabaseConfigured ? 'idle' : 'not_configured'
+  );
   const [roomCode, setRoomCode] = useState<string>('');
   const [isHost, setIsHost] = useState<boolean>(false);
   const [opponentState, setOpponentState] = useState<PlayerState | null>(null);
@@ -45,6 +51,8 @@ export const useMultiplayer = () => {
 
   // Подписка на изменения в комнате
   const subscribeToRoom = useCallback((roomId: string, myPlayerNumber: number) => {
+    if (!supabase) return;
+    
     const opponentNumber = myPlayerNumber === 1 ? 2 : 1;
 
     const channel = supabase
@@ -57,10 +65,9 @@ export const useMultiplayer = () => {
           table: 'players',
           filter: `room_id=eq.${roomId}`,
         },
-        (payload) => {
+        (payload: any) => {
           const updatedPlayer = payload.new;
           
-          // Обновляем только если это противник
           if (updatedPlayer.player_number === opponentNumber) {
             setOpponentState({
               score: updatedPlayer.score,
@@ -80,13 +87,18 @@ export const useMultiplayer = () => {
 
   // Создать комнату (хост)
   const createRoom = useCallback(async () => {
+    if (!supabase) {
+      setErrorMessage('Supabase не настроен');
+      setStatus('error');
+      return;
+    }
+
     try {
       setStatus('connecting');
       const code = generateRoomCode();
       setRoomCode(code);
       setIsHost(true);
 
-      // Создаём комнату в БД
       const { data: room, error: roomError } = await supabase
         .from('game_rooms')
         .insert({ code, status: 'waiting' })
@@ -97,7 +109,6 @@ export const useMultiplayer = () => {
 
       roomIdRef.current = room.id;
 
-      // Создаём игрока 1
       const { data: player, error: playerError } = await supabase
         .from('players')
         .insert({
@@ -118,9 +129,7 @@ export const useMultiplayer = () => {
       playerIdRef.current = player.id;
       playerNumberRef.current = 1;
 
-      // Подписываемся на изменения
       subscribeToRoom(room.id, 1);
-
       setStatus('waiting');
     } catch (err: any) {
       console.error('Create room error:', err);
@@ -131,12 +140,17 @@ export const useMultiplayer = () => {
 
   // Присоединиться к комнате
   const joinRoom = useCallback(async (code: string) => {
+    if (!supabase) {
+      setErrorMessage('Supabase не настроен');
+      setStatus('error');
+      return;
+    }
+
     try {
       setStatus('connecting');
       setRoomCode(code);
       setIsHost(false);
 
-      // Ищем комнату
       const { data: room, error: roomError } = await supabase
         .from('game_rooms')
         .select()
@@ -150,7 +164,6 @@ export const useMultiplayer = () => {
 
       roomIdRef.current = room.id;
 
-      // Создаём игрока 2
       const { data: player, error: playerError } = await supabase
         .from('players')
         .insert({
@@ -171,15 +184,12 @@ export const useMultiplayer = () => {
       playerIdRef.current = player.id;
       playerNumberRef.current = 2;
 
-      // Обновляем статус комнаты
       await supabase
         .from('game_rooms')
         .update({ status: 'playing' })
         .eq('id', room.id);
 
-      // Подписываемся на изменения
       subscribeToRoom(room.id, 2);
-
       setStatus('connected');
     } catch (err: any) {
       console.error('Join room error:', err);
@@ -190,7 +200,7 @@ export const useMultiplayer = () => {
 
   // Отправить своё состояние
   const sendState = useCallback(async (state: PlayerState) => {
-    if (!playerIdRef.current) return;
+    if (!supabase || !playerIdRef.current) return;
 
     try {
       await supabase
@@ -212,7 +222,7 @@ export const useMultiplayer = () => {
 
   // Отправить game over
   const sendGameOver = useCallback(async () => {
-    if (!playerIdRef.current) return;
+    if (!supabase || !playerIdRef.current) return;
 
     try {
       await supabase
@@ -223,7 +233,6 @@ export const useMultiplayer = () => {
         })
         .eq('id', playerIdRef.current);
 
-      // Обновляем статус комнаты
       if (roomIdRef.current) {
         await supabase
           .from('game_rooms')
@@ -237,21 +246,19 @@ export const useMultiplayer = () => {
 
   // Закрыть соединение
   const disconnect = useCallback(async () => {
-    if (channelRef.current) {
+    if (channelRef.current && supabase) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
 
-    // Удаляем игрока из БД
-    if (playerIdRef.current) {
+    if (playerIdRef.current && supabase) {
       await supabase
         .from('players')
         .delete()
         .eq('id', playerIdRef.current);
     }
 
-    // Если хост и комната в статусе waiting, удаляем комнату
-    if (isHost && roomIdRef.current) {
+    if (isHost && roomIdRef.current && supabase) {
       const { data: room } = await supabase
         .from('game_rooms')
         .select()
@@ -266,7 +273,7 @@ export const useMultiplayer = () => {
       }
     }
 
-    setStatus('idle');
+    setStatus(isSupabaseConfigured ? 'idle' : 'not_configured');
     setRoomCode('');
     setOpponentState(null);
     setErrorMessage('');
@@ -278,7 +285,7 @@ export const useMultiplayer = () => {
   // Очистка при unmount
   useEffect(() => {
     return () => {
-      if (channelRef.current) {
+      if (channelRef.current && supabase) {
         supabase.removeChannel(channelRef.current);
       }
     };
