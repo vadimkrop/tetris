@@ -6,7 +6,7 @@ import LineClearEffect from './components/LineClearEffect';
 import MultiplayerMenu from './components/MultiplayerMenu';
 import OpponentView from './components/OpponentView';
 import { useMultiplayer } from './hooks/useMultiplayer';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 function NextPieceDisplay({ type }: { type: TetrominoType }) {
   const tetromino = TETROMINOS[type];
@@ -100,9 +100,14 @@ function App() {
     disconnect,
   } = useMultiplayer();
 
-  // Синхронизация состояния с противником
+  // Синхронизация состояния с противником (throttled)
+  const lastSyncRef = useRef<number>(0);
   useEffect(() => {
     if (multiplayerStatus === 'connected' && gameState === 'playing') {
+      const now = Date.now();
+      if (now - lastSyncRef.current < 500) return; // Отправляем не чаще чем раз в 500мс
+      lastSyncRef.current = now;
+
       // Конвертируем board в числовой формат
       const numericBoard = board.map((row) =>
         row.map((cell) => (cell.filled ? 1 : 0))
