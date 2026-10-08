@@ -3,6 +3,9 @@ import { TETROMINOS, TetrominoType, BOARD_WIDTH, BOARD_HEIGHT } from './constant
 import FeedbackWidget from './components/FeedbackWidget';
 import TutorialModal from './components/TutorialModal';
 import LineClearEffect from './components/LineClearEffect';
+import MultiplayerMenu from './components/MultiplayerMenu';
+import OpponentView from './components/OpponentView';
+import { useMultiplayer } from './hooks/useMultiplayer';
 import { useEffect, useState, useCallback } from 'react';
 
 function NextPieceDisplay({ type }: { type: TetrominoType }) {
@@ -83,6 +86,45 @@ function App() {
   const cellSize = useCellSize();
   const [activeButton, setActiveButton] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [showMultiplayer, setShowMultiplayer] = useState(false);
+
+  const {
+    status: multiplayerStatus,
+    roomCode,
+    opponentState,
+    errorMessage,
+    createRoom,
+    joinRoom,
+    sendState,
+    sendGameOver,
+    disconnect,
+  } = useMultiplayer();
+
+  // Синхронизация состояния с противником
+  useEffect(() => {
+    if (multiplayerStatus === 'connected' && gameState === 'playing') {
+      // Конвертируем board в числовой формат
+      const numericBoard = board.map((row) =>
+        row.map((cell) => (cell.filled ? 1 : 0))
+      );
+
+      sendState({
+        score,
+        lines,
+        level,
+        board: numericBoard,
+        isAlive: true,
+        nextPiece: nextPiece,
+      });
+    }
+  }, [board, score, lines, level, gameState, nextPiece, multiplayerStatus, sendState]);
+
+  // Отправить game over
+  useEffect(() => {
+    if (multiplayerStatus === 'connected' && gameState === 'gameover') {
+      sendGameOver();
+    }
+  }, [gameState, multiplayerStatus, sendGameOver]);
 
   // Обработка нажатий кнопок с визуальной обратной связью
   const handleButtonPress = useCallback((name: string, action: () => void) => {
@@ -99,20 +141,39 @@ function App() {
           ТЕТРИС
         </h1>
         
-        {/* Tutorial Button - Always Visible */}
-        <button
-          onClick={() => setShowTutorial(true)}
-          className="relative group"
-          aria-label="Как играть"
-        >
-          {/* Pulse animation */}
-          <span className="absolute inset-0 rounded-full bg-blue-500 animate-ping opacity-30" />
-          
-          <div className="relative flex items-center gap-2 px-4 py-2 md:px-5 md:py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-full hover:from-blue-400 hover:to-cyan-400 transition-all transform hover:scale-110 shadow-lg shadow-blue-500/50 text-sm md:text-base">
-            <span className="text-xl md:text-2xl">📖</span>
-            <span className="hidden sm:inline">Как играть</span>
-          </div>
-        </button>
+        {/* Header Buttons */}
+        <div className="flex items-center gap-2">
+          {/* Multiplayer Button */}
+          <button
+            onClick={() => setShowMultiplayer(true)}
+            className="relative group"
+            aria-label="Мультиплеер"
+          >
+            <span className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-30" />
+            <div className="relative flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold rounded-full hover:from-green-400 hover:to-emerald-400 transition-all transform hover:scale-110 shadow-lg shadow-green-500/50 text-sm md:text-base">
+              <span className="text-lg md:text-xl">🎮</span>
+              <span className="hidden sm:inline text-xs md:text-sm">
+                {multiplayerStatus === 'connected' ? 'В игре' : 'Мультиплеер'}
+              </span>
+              {multiplayerStatus === 'connected' && (
+                <span className="w-2 h-2 bg-green-300 rounded-full animate-pulse" />
+              )}
+            </div>
+          </button>
+
+          {/* Tutorial Button */}
+          <button
+            onClick={() => setShowTutorial(true)}
+            className="relative group"
+            aria-label="Как играть"
+          >
+            <span className="absolute inset-0 rounded-full bg-blue-500 animate-ping opacity-30" />
+            <div className="relative flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-full hover:from-blue-400 hover:to-cyan-400 transition-all transform hover:scale-110 shadow-lg shadow-blue-500/50 text-sm md:text-base">
+              <span className="text-lg md:text-xl">📖</span>
+              <span className="hidden sm:inline text-xs md:text-sm">Как играть</span>
+            </div>
+          </button>
+        </div>
       </div>
 
       {/* Mobile Stats Bar */}
@@ -133,6 +194,13 @@ function App() {
           <NextPieceDisplay type={nextPiece} />
         </div>
       </div>
+
+      {/* Opponent View (Mobile) */}
+      {multiplayerStatus === 'connected' && (
+        <div className="md:hidden w-full max-w-sm mb-2 px-2">
+          <OpponentView opponentState={opponentState} isMobile={true} />
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center md:items-start">
         {/* Game Board */}
@@ -215,7 +283,7 @@ function App() {
             </div>
           )}
 
-          {gameState === 'gameover' && (
+          {gameState === 'gameover' && multiplayerStatus !== 'connected' && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80 rounded-lg">
               <div className="text-center px-4">
                 <p className="text-red-400 text-2xl md:text-3xl font-bold mb-2">ИГРА ОКОНЧЕНА</p>
@@ -272,6 +340,11 @@ function App() {
             >
               ⏸ Пауза
             </button>
+          )}
+
+          {/* Opponent View (Desktop) */}
+          {multiplayerStatus === 'connected' && (
+            <OpponentView opponentState={opponentState} isMobile={false} />
           )}
         </div>
       </div>
@@ -368,6 +441,66 @@ function App() {
 
       {/* Tutorial Modal */}
       <TutorialModal isOpen={showTutorial} onClose={() => setShowTutorial(false)} />
+
+      {/* Multiplayer Menu */}
+      {showMultiplayer && (
+        <MultiplayerMenu
+          status={multiplayerStatus}
+          roomCode={roomCode}
+          errorMessage={errorMessage}
+          onCreateRoom={createRoom}
+          onJoinRoom={joinRoom}
+          onDisconnect={disconnect}
+          onClose={() => setShowMultiplayer(false)}
+        />
+      )}
+
+      {/* Game Over with Winner */}
+      {gameState === 'gameover' && multiplayerStatus === 'connected' && opponentState && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+          <div className="bg-gray-900 border-2 border-purple-500 rounded-2xl p-8 max-w-md mx-4 text-center">
+            {opponentState.isAlive ? (
+              <>
+                <div className="text-6xl mb-4">😔</div>
+                <h2 className="text-3xl font-bold text-red-400 mb-2">Поражение</h2>
+                <p className="text-gray-300 mb-4">Противник оказался быстрее!</p>
+              </>
+            ) : (
+              <>
+                <div className="text-6xl mb-4">🏆</div>
+                <h2 className="text-3xl font-bold text-green-400 mb-2">Победа!</h2>
+                <p className="text-gray-300 mb-4">Вы обыграли противника!</p>
+              </>
+            )}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-gray-800 rounded-lg p-3">
+                <div className="text-xs text-gray-400 uppercase mb-1">Ваши очки</div>
+                <div className="text-2xl font-bold text-white font-mono">{score.toLocaleString()}</div>
+              </div>
+              <div className="bg-gray-800 rounded-lg p-3">
+                <div className="text-xs text-gray-400 uppercase mb-1">Очки противника</div>
+                <div className="text-2xl font-bold text-white font-mono">
+                  {opponentState.score.toLocaleString()}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={startGame}
+                className="flex-1 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-lg hover:from-green-400 hover:to-emerald-500 transition-all"
+              >
+                🔄 Реванш
+              </button>
+              <button
+                onClick={disconnect}
+                className="flex-1 px-6 py-3 bg-gray-700 text-white font-bold rounded-lg hover:bg-gray-600 transition-all"
+              >
+                Выйти
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Feedback Widget */}
       <FeedbackWidget />
