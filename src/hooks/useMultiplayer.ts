@@ -1,18 +1,23 @@
+import { createClient } from '@supabase/supabase-js';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import Peer, { DataConnection } from 'peerjs';
+
+// Инициализация Supabase
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Supabase credentials not found in environment variables');
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export type PlayerState = {
   score: number;
   lines: number;
   level: number;
-  board: number[][]; // 0 = пусто, 1 = заполнено
+  board: number[][];
   isAlive: boolean;
   nextPiece: string;
-};
-
-export type MultiplayerMessage = {
-  type: 'state' | 'gameover' | 'ready' | 'start';
-  payload?: PlayerState | string;
 };
 
 export type MultiplayerStatus = 'idle' | 'connecting' | 'waiting' | 'connected' | 'disconnected' | 'error';
@@ -33,65 +38,44 @@ export const useMultiplayer = () => {
   const [opponentState, setOpponentState] = useState<PlayerState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  const peerRef = useRef<Peer | null>(null);
-  const connectionRef = useRef<DataConnection | null>(null);
-  const myStateRef = useRef<PlayerState>({
-    score: 0,
-    lines: 0,
-    level: 1,
-    board: Array(20).fill(null).map(() => Array(10).fill(0)),
-    isAlive: true,
-    nextPiece: 'T',
-  });
+  const roomIdRef = useRef<string | null>(null);
+  const playerIdRef = useRef<string | null>(null);
+  const playerNumberRef = useRef<number | null>(null);
+  const channelRef = useRef<any>(null);
 
-  // Инициализация Peer
-  const initPeer = useCallback((peerId: string): Promise<Peer> => {
-    return new Promise((resolve, reject) => {
-      const peer = new Peer(peerId, {
-        debug: 1,
-      });
+  // Подписка на изменения в комнате
+  const subscribeToRoom = useCallback((roomId: string, myPlayerNumber: number) => {
+    const opponentNumber = myPlayerNumber === 1 ? 2 : 1;
 
-      peer.on('open', (id) => {
-        console.log('My peer ID:', id);
-        resolve(peer);
-      });
-
-      peer.on('error', (err) => {
-        console.error('Peer error:', err);
-        setErrorMessage(err.message);
-        setStatus('error');
-        reject(err);
-      });
-
-      peer.on('disconnected', () => {
-        console.log('Peer disconnected');
-        setStatus('disconnected');
-      });
-
-      peerRef.current = peer;
-    });
-  }, []);
-
-  // Обработка входящих сообщений
-  const handleMessage = useCallback((data: MultiplayerMessage) => {
-    console.log('Received message:', data);
-    
-    switch (data.type) {
-      case 'state':
-        if (data.payload) {
-          setOpponentState(data.payload as PlayerState);
+    const channel = supabase
+      .channel(`room:${roomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'players',
+          filter: `room_id=eq.${roomId}`,
+        },
+        (payload) => {
+          const updatedPlayer = payload.new;
+          
+          // Обновляем только если это противник
+          if (updatedPlayer.player_number === opponentNumber) {
+            setOpponentState({
+              score: updatedPlayer.score,
+              lines: updatedPlayer.lines,
+              level: updatedPlayer.level,
+              board: updatedPlayer.board_state,
+              isAlive: updatedPlayer.is_alive,
+              nextPiece: updatedPlayer.next_piece,
+            });
+          }
         }
-        break;
-      case 'gameover':
-        console.log('Opponent game over');
-        break;
-      case 'ready':
-        console.log('Opponent ready');
-        break;
-      case 'start':
-        console.log('Game started');
-        break;
-    }
+      )
+      .subscribe();
+
+    channelRef.current = channel;
   }, []);
 
   // Создать комнату (хост)
@@ -102,39 +86,48 @@ export const useMultiplayer = () => {
       setRoomCode(code);
       setIsHost(true);
 
-      const peer = await initPeer(code);
+      // Создаём комнату в БД
+      const { data: room, error: roomError } = await supabase
+        .from('game_rooms')
+        .insert({ code, status: 'waiting' })
+        .select()
+        .single();
 
-      peer.on('connection', (conn) => {
-        console.log('Opponent connected');
-        connectionRef.current = conn;
+      if (roomError) throw roomError;
 
-        conn.on('open', () => {
-          console.log('Connection opened');
-          setStatus('connected');
-        });
+      roomIdRef.current = room.id;
 
-        conn.on('data', (data) => {
-          handleMessage(data as MultiplayerMessage);
-        });
+      // Создаём игрока 1
+      const { data: player, error: playerError } = await supabase
+        .from('players')
+        .insert({
+          room_id: room.id,
+          player_number: 1,
+          score: 0,
+          lines: 0,
+          level: 1,
+          board_state: Array(20).fill(null).map(() => Array(10).fill(0)),
+          is_alive: true,
+          next_piece: 'T',
+        })
+        .select()
+        .single();
 
-        conn.on('close', () => {
-          console.log('Connection closed');
-          setStatus('disconnected');
-          connectionRef.current = null;
-        });
+      if (playerError) throw playerError;
 
-        conn.on('error', (err) => {
-          console.error('Connection error:', err);
-          setErrorMessage(err.message);
-        });
-      });
+      playerIdRef.current = player.id;
+      playerNumberRef.current = 1;
+
+      // Подписываемся на изменения
+      subscribeToRoom(room.id, 1);
 
       setStatus('waiting');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Create room error:', err);
+      setErrorMessage(err.message || 'Ошибка создания комнаты');
       setStatus('error');
     }
-  }, [initPeer, handleMessage]);
+  }, [subscribeToRoom]);
 
   // Присоединиться к комнате
   const joinRoom = useCallback(async (code: string) => {
@@ -143,89 +136,150 @@ export const useMultiplayer = () => {
       setRoomCode(code);
       setIsHost(false);
 
-      const myId = `player-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const peer = await initPeer(myId);
+      // Ищем комнату
+      const { data: room, error: roomError } = await supabase
+        .from('game_rooms')
+        .select()
+        .eq('code', code)
+        .eq('status', 'waiting')
+        .single();
 
-      const conn = peer.connect(code, {
-        reliable: true,
-      });
+      if (roomError || !room) {
+        throw new Error('Комната не найдена или уже занята');
+      }
 
-      connectionRef.current = conn;
+      roomIdRef.current = room.id;
 
-      conn.on('open', () => {
-        console.log('Connected to host');
-        setStatus('connected');
-        
-        // Отправить ready
-        conn.send({ type: 'ready' } as MultiplayerMessage);
-      });
+      // Создаём игрока 2
+      const { data: player, error: playerError } = await supabase
+        .from('players')
+        .insert({
+          room_id: room.id,
+          player_number: 2,
+          score: 0,
+          lines: 0,
+          level: 1,
+          board_state: Array(20).fill(null).map(() => Array(10).fill(0)),
+          is_alive: true,
+          next_piece: 'T',
+        })
+        .select()
+        .single();
 
-      conn.on('data', (data) => {
-        handleMessage(data as MultiplayerMessage);
-      });
+      if (playerError) throw playerError;
 
-      conn.on('close', () => {
-        console.log('Connection closed');
-        setStatus('disconnected');
-        connectionRef.current = null;
-      });
+      playerIdRef.current = player.id;
+      playerNumberRef.current = 2;
 
-      conn.on('error', (err) => {
-        console.error('Connection error:', err);
-        setErrorMessage(err.message);
-        setStatus('error');
-      });
-    } catch (err) {
+      // Обновляем статус комнаты
+      await supabase
+        .from('game_rooms')
+        .update({ status: 'playing' })
+        .eq('id', room.id);
+
+      // Подписываемся на изменения
+      subscribeToRoom(room.id, 2);
+
+      setStatus('connected');
+    } catch (err: any) {
       console.error('Join room error:', err);
+      setErrorMessage(err.message || 'Ошибка подключения к комнате');
       setStatus('error');
     }
-  }, [initPeer, handleMessage]);
+  }, [subscribeToRoom]);
 
   // Отправить своё состояние
-  const sendState = useCallback((state: PlayerState) => {
-    myStateRef.current = state;
-    
-    if (connectionRef.current && connectionRef.current.open) {
-      connectionRef.current.send({
-        type: 'state',
-        payload: state,
-      } as MultiplayerMessage);
+  const sendState = useCallback(async (state: PlayerState) => {
+    if (!playerIdRef.current) return;
+
+    try {
+      await supabase
+        .from('players')
+        .update({
+          score: state.score,
+          lines: state.lines,
+          level: state.level,
+          board_state: state.board,
+          is_alive: state.isAlive,
+          next_piece: state.nextPiece,
+          last_update: new Date().toISOString(),
+        })
+        .eq('id', playerIdRef.current);
+    } catch (err) {
+      console.error('Send state error:', err);
     }
   }, []);
 
   // Отправить game over
-  const sendGameOver = useCallback(() => {
-    if (connectionRef.current && connectionRef.current.open) {
-      connectionRef.current.send({
-        type: 'gameover',
-      } as MultiplayerMessage);
+  const sendGameOver = useCallback(async () => {
+    if (!playerIdRef.current) return;
+
+    try {
+      await supabase
+        .from('players')
+        .update({
+          is_alive: false,
+          last_update: new Date().toISOString(),
+        })
+        .eq('id', playerIdRef.current);
+
+      // Обновляем статус комнаты
+      if (roomIdRef.current) {
+        await supabase
+          .from('game_rooms')
+          .update({ status: 'finished' })
+          .eq('id', roomIdRef.current);
+      }
+    } catch (err) {
+      console.error('Send game over error:', err);
     }
   }, []);
 
   // Закрыть соединение
-  const disconnect = useCallback(() => {
-    if (connectionRef.current) {
-      connectionRef.current.close();
-      connectionRef.current = null;
+  const disconnect = useCallback(async () => {
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
     }
-    if (peerRef.current) {
-      peerRef.current.destroy();
-      peerRef.current = null;
+
+    // Удаляем игрока из БД
+    if (playerIdRef.current) {
+      await supabase
+        .from('players')
+        .delete()
+        .eq('id', playerIdRef.current);
     }
+
+    // Если хост и комната в статусе waiting, удаляем комнату
+    if (isHost && roomIdRef.current) {
+      const { data: room } = await supabase
+        .from('game_rooms')
+        .select()
+        .eq('id', roomIdRef.current)
+        .single();
+
+      if (room && room.status === 'waiting') {
+        await supabase
+          .from('game_rooms')
+          .delete()
+          .eq('id', roomIdRef.current);
+      }
+    }
+
     setStatus('idle');
     setRoomCode('');
     setOpponentState(null);
     setErrorMessage('');
-  }, []);
+    roomIdRef.current = null;
+    playerIdRef.current = null;
+    playerNumberRef.current = null;
+  }, [isHost]);
 
   // Очистка при unmount
   useEffect(() => {
     return () => {
-      if (connectionRef.current) {
-        connectionRef.current.close();
-      }
-      if (peerRef.current) {
-        peerRef.current.destroy();
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
       }
     };
   }, []);
