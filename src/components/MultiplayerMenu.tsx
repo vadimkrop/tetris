@@ -60,8 +60,29 @@ const MultiplayerMenu = ({
 
         {/* Content */}
         <div className="p-6">
+          {/* Not configured */}
+          {status === 'not_configured' && (
+            <div className="text-center">
+              <div className="text-5xl mb-4">⚙️</div>
+              <h3 className="text-yellow-400 font-bold text-lg mb-2">
+                Мультиплеер не настроен
+              </h3>
+              <p className="text-gray-300 text-sm mb-4">
+                Для работы мультиплеера необходимо настроить Supabase.
+                Обратитесь к README.md для инструкций.
+              </p>
+              <div className="bg-gray-800 rounded-lg p-3 text-left text-xs text-gray-400 font-mono">
+                <p>1. Создайте таблицы в Supabase SQL Editor</p>
+                <p>2. Добавьте переменные окружения на Vercel:</p>
+                <p className="ml-2">VITE_SUPABASE_URL</p>
+                <p className="ml-2">VITE_SUPABASE_ANON_KEY</p>
+                <p>3. Redeploy проект</p>
+              </div>
+            </div>
+          )}
+
           {/* Выбор режима */}
-          {mode === 'select' && (
+          {mode === 'select' && status !== 'not_configured' && (
             <div className="space-y-4">
               <p className="text-gray-300 text-center mb-6">
                 Играйте с друзьями в реальном времени!
