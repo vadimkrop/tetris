@@ -1,6 +1,7 @@
 import { useTetris } from './hooks/useTetris';
 import { TETROMINOS, TetrominoType, BOARD_WIDTH, BOARD_HEIGHT } from './constants';
 import FeedbackWidget from './components/FeedbackWidget';
+import TutorialModal from './components/TutorialModal';
 import { useEffect, useState, useCallback } from 'react';
 
 function NextPieceDisplay({ type }: { type: TetrominoType }) {
@@ -68,6 +69,7 @@ function App() {
     score,
     lines,
     level,
+    clearingRows,
     startGame,
     togglePause,
     moveLeft,
@@ -79,6 +81,7 @@ function App() {
 
   const cellSize = useCellSize();
   const [activeButton, setActiveButton] = useState<string | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   // Обработка нажатий кнопок с визуальной обратной связью
   const handleButtonPress = useCallback((name: string, action: () => void) => {
@@ -113,6 +116,15 @@ function App() {
         </div>
       </div>
 
+      {/* Tutorial Button */}
+      <button
+        onClick={() => setShowTutorial(true)}
+        className="mb-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold rounded-lg hover:from-blue-400 hover:to-cyan-400 transition-all transform hover:scale-105 shadow-lg shadow-blue-500/30 text-sm flex items-center gap-2"
+      >
+        <span className="text-lg">📖</span>
+        <span>Как играть</span>
+      </button>
+
       <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center md:items-start">
         {/* Game Board */}
         <div className="relative">
@@ -123,28 +135,36 @@ function App() {
               height: BOARD_HEIGHT * cellSize,
             }}
           >
-            {board.map((row, rowIndex) => (
-              <div key={rowIndex} className="flex">
-                {row.map((cell, colIndex) => (
-                  <div
-                    key={colIndex}
-                    className="border border-gray-800/50"
-                    style={{
-                      width: cellSize,
-                      height: cellSize,
-                      backgroundColor: cell.filled
-                        ? cell.color
-                        : cell.color
-                        ? cell.color
-                        : 'rgba(17, 24, 39, 0.8)',
-                      boxShadow: cell.filled
-                        ? `inset 0 0 6px rgba(255,255,255,0.3), inset 0 -2px 4px rgba(0,0,0,0.3)`
-                        : 'none',
-                    }}
-                  />
-                ))}
-              </div>
-            ))}
+            {board.map((row, rowIndex) => {
+              const isClearing = clearingRows.includes(rowIndex);
+              return (
+                <div key={rowIndex} className="flex">
+                  {row.map((cell, colIndex) => (
+                    <div
+                      key={colIndex}
+                      className={`border border-gray-800/50 ${isClearing ? 'animate-pulse' : ''}`}
+                      style={{
+                        width: cellSize,
+                        height: cellSize,
+                        backgroundColor: isClearing
+                          ? '#ffffff'
+                          : cell.filled
+                          ? cell.color
+                          : cell.color
+                          ? cell.color
+                          : 'rgba(17, 24, 39, 0.8)',
+                        boxShadow: isClearing
+                          ? `0 0 20px #ffffff, 0 0 40px #ffffff, inset 0 0 10px rgba(255,255,255,0.8)`
+                          : cell.filled
+                          ? `inset 0 0 6px rgba(255,255,255,0.3), inset 0 -2px 4px rgba(0,0,0,0.3)`
+                          : 'none',
+                        transition: isClearing ? 'all 0.2s ease-out' : 'none',
+                      }}
+                    />
+                  ))}
+                </div>
+              );
+            })}
           </div>
 
           {/* Overlays */}
@@ -216,6 +236,7 @@ function App() {
               Уровень
             </h3>
             <p className="text-cyan-400 text-2xl font-bold font-mono">{level}</p>
+            <p className="text-gray-400 text-xs mt-1">Скорость: {level}x</p>
           </div>
 
           <div className="bg-gray-800/80 backdrop-blur rounded-lg p-4 border border-purple-500/30">
@@ -233,6 +254,14 @@ function App() {
               ⏸ Пауза
             </button>
           )}
+
+          <button
+            onClick={() => setShowTutorial(true)}
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold rounded-lg hover:from-blue-400 hover:to-cyan-400 transition-all transform hover:scale-105 shadow-lg shadow-blue-500/30 text-sm flex items-center justify-center gap-2"
+          >
+            <span>📖</span>
+            <span>Как играть</span>
+          </button>
         </div>
       </div>
 
@@ -296,17 +325,38 @@ function App() {
       )}
 
       {/* Desktop Instructions */}
-      <div className="mt-4 md:mt-6 text-center text-gray-400 text-sm hidden md:block">
-        <p className="mb-1">
-          <span className="text-purple-300 font-semibold">←→</span> — движение{' '}
-          <span className="text-purple-300 font-semibold">↑</span> — поворот{' '}
-          <span className="text-purple-300 font-semibold">↓</span> — ускорение{' '}
-          <span className="text-purple-300 font-semibold">Пробел</span> — бросок
-        </p>
-        <p>
-          <span className="text-purple-300 font-semibold">P / Esc</span> — пауза
-        </p>
+      <div className="mt-4 md:mt-6 hidden md:block">
+        <div className="bg-gray-800/60 backdrop-blur rounded-xl p-4 border border-purple-500/30 shadow-lg">
+          <h3 className="text-purple-300 font-semibold mb-3 text-center text-sm uppercase tracking-wider flex items-center justify-center gap-2">
+            <span>🎮</span> Управление
+          </h3>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <kbd className="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs font-mono">←→</kbd>
+              <span className="text-gray-300">Движение</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs font-mono">↑</kbd>
+              <span className="text-gray-300">Поворот</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs font-mono">↓</kbd>
+              <span className="text-gray-300">Ускорение</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs font-mono">Space</kbd>
+              <span className="text-gray-300">Бросок</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs font-mono">P / Esc</kbd>
+              <span className="text-gray-300">Пауза</span>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Tutorial Modal */}
+      <TutorialModal isOpen={showTutorial} onClose={() => setShowTutorial(false)} />
 
       {/* Feedback Widget */}
       <FeedbackWidget />
