@@ -13,6 +13,8 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
 
 if (!isSupabaseConfigured) {
   console.warn('Supabase не настроен. Мультиплеер будет недоступен.');
+} else {
+  console.log('✅ Supabase настроен:', supabaseUrl);
 }
 
 export type PlayerState = {
@@ -54,33 +56,38 @@ export const useMultiplayer = () => {
     if (!supabase) return;
     
     const opponentNumber = myPlayerNumber === 1 ? 2 : 1;
+    console.log(`📡 Подписка на комнату ${roomId}, мой номер: ${myPlayerNumber}, ищу игрока ${opponentNumber}`);
 
     const channel = supabase
       .channel(`room:${roomId}`)
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*',
           schema: 'public',
           table: 'players',
           filter: `room_id=eq.${roomId}`,
         },
         (payload: any) => {
+          console.log('📨 Получено обновление:', payload);
           const updatedPlayer = payload.new;
           
-          if (updatedPlayer.player_number === opponentNumber) {
+          if (updatedPlayer && updatedPlayer.player_number === opponentNumber) {
+            console.log('✅ Обновление от противника:', updatedPlayer);
             setOpponentState({
-              score: updatedPlayer.score,
-              lines: updatedPlayer.lines,
-              level: updatedPlayer.level,
-              board: updatedPlayer.board_state,
-              isAlive: updatedPlayer.is_alive,
-              nextPiece: updatedPlayer.next_piece,
+              score: updatedPlayer.score || 0,
+              lines: updatedPlayer.lines || 0,
+              level: updatedPlayer.level || 1,
+              board: updatedPlayer.board_state || Array(20).fill(null).map(() => Array(10).fill(0)),
+              isAlive: updatedPlayer.is_alive !== false,
+              nextPiece: updatedPlayer.next_piece || 'T',
             });
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        console.log('📡 Статус подписки:', status);
+      });
 
     channelRef.current = channel;
   }, []);
@@ -98,17 +105,25 @@ export const useMultiplayer = () => {
       const code = generateRoomCode();
       setRoomCode(code);
       setIsHost(true);
+      
+      console.log('🏠 Создаю комнату с кодом:', code);
 
+      // Создаём комнату в БД
       const { data: room, error: roomError } = await supabase
         .from('game_rooms')
-        .insert({ code, status: 'waiting' })
+        .insert({ code: code, status: 'waiting' })
         .select()
         .single();
 
-      if (roomError) throw roomError;
+      if (roomError) {
+        console.error('❌ Ошибка создания комнаты:', roomError);
+        throw roomError;
+      }
 
+      console.log('✅ Комната создана:', room);
       roomIdRef.current = room.id;
 
+      // Создаём игрока 1
       const { data: player, error: playerError } = await supabase
         .from('players')
         .insert({
@@ -124,22 +139,27 @@ export const useMultiplayer = () => {
         .select()
         .single();
 
-      if (playerError) throw playerError;
+      if (playerError) {
+        console.error('❌ Ошибка создания игрока:', playerError);
+        throw playerError;
+      }
 
+      console.log('✅ Игрок создан:', player);
       playerIdRef.current = player.id;
       playerNumberRef.current = 1;
 
+      // Подписываемся на изменения
       subscribeToRoom(room.id, 1);
       setStatus('waiting');
     } catch (err: any) {
-      console.error('Create room error:', err);
+      console.error('❌ Create room error:', err);
       setErrorMessage(err.message || 'Ошибка создания комнаты');
       setStatus('error');
     }
   }, [subscribeToRoom]);
 
   // Присоединиться к комнате
-  const joinRoom = useCallback(async (code: string) => {
+  const joinRoom = useCallback(async (inputCode: string) => {
     if (!supabase) {
       setErrorMessage('Supabase не настроен');
       setStatus('error');
@@ -148,22 +168,58 @@ export const useMultiplayer = () => {
 
     try {
       setStatus('connecting');
+      const code = inputCode.trim().toUpperCase();
       setRoomCode(code);
       setIsHost(false);
+      
+      console.log('🔗 Ищу комнату с кодом:', code);
 
-      const { data: room, error: roomError } = await supabase
+      // Сначала проверим все комнаты с таким кодом (без фильтра по статусу)
+      const { data: allRooms, error: allRoomsError } = await supabase
         .from('game_rooms')
-        .select()
-        .eq('code', code)
-        .eq('status', 'waiting')
-        .single();
+        .select('*')
+        .eq('code', code);
 
-      if (roomError || !room) {
-        throw new Error('Комната не найдена или уже занята');
+      console.log('📋 Все комнаты с таким кодом:', allRooms, 'Ошибка:', allRoomsError);
+
+      if (allRoomsError) {
+        console.error('❌ Ошибка поиска комнат:', allRoomsError);
+        throw allRoomsError;
+      }
+
+      if (!allRooms || allRooms.length === 0) {
+        throw new Error('Комната не найдена. Проверьте код.');
+      }
+
+      // Ищем комнату со статусом waiting или playing
+      const room = allRooms.find(r => r.status === 'waiting' || r.status === 'playing');
+      
+      if (!room) {
+        throw new Error('Комната уже завершена или недоступна');
+      }
+
+      console.log('✅ Найдена комната:', room);
+
+      // Проверяем сколько уже игроков
+      const { data: existingPlayers, error: playersError } = await supabase
+        .from('players')
+        .select('*')
+        .eq('room_id', room.id);
+
+      console.log('👥 Игроки в комнате:', existingPlayers);
+
+      if (playersError) {
+        console.error('❌ Ошибка получения игроков:', playersError);
+        throw playersError;
+      }
+
+      if (existingPlayers && existingPlayers.length >= 2) {
+        throw new Error('Комната уже заполнена (2 игрока)');
       }
 
       roomIdRef.current = room.id;
 
+      // Создаём игрока 2
       const { data: player, error: playerError } = await supabase
         .from('players')
         .insert({
@@ -179,20 +235,26 @@ export const useMultiplayer = () => {
         .select()
         .single();
 
-      if (playerError) throw playerError;
+      if (playerError) {
+        console.error('❌ Ошибка подключения игрока:', playerError);
+        throw playerError;
+      }
 
+      console.log('✅ Игрок подключён:', player);
       playerIdRef.current = player.id;
       playerNumberRef.current = 2;
 
+      // Обновляем статус комнаты на playing
       await supabase
         .from('game_rooms')
         .update({ status: 'playing' })
         .eq('id', room.id);
 
+      // Подписываемся на изменения
       subscribeToRoom(room.id, 2);
       setStatus('connected');
     } catch (err: any) {
-      console.error('Join room error:', err);
+      console.error('❌ Join room error:', err);
       setErrorMessage(err.message || 'Ошибка подключения к комнате');
       setStatus('error');
     }

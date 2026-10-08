@@ -3,6 +3,10 @@
 -- Выполните этот скрипт в Supabase SQL Editor
 -- ============================================
 
+-- Удаляем старые таблицы если они есть
+drop table if exists players;
+drop table if exists game_rooms;
+
 -- Таблица игровых комнат
 create table game_rooms (
   id uuid default gen_random_uuid() primary key,
@@ -32,23 +36,17 @@ create index idx_players_room_id on players(room_id);
 create index idx_game_rooms_code on game_rooms(code);
 create index idx_game_rooms_status on game_rooms(status);
 
--- Включить Realtime для таблицы players
+-- ============================================
+-- Включаем Realtime для обеих таблиц
+-- ============================================
+
+-- Удаляем старые публикации если есть
+alter publication supabase_realtime drop table if exists players;
+alter publication supabase_realtime drop table if exists game_rooms;
+
+-- Добавляем таблицы в Realtime
 alter publication supabase_realtime add table players;
-
--- Функция для автоматического обновления updated_at
-create or replace function update_updated_at_column()
-returns trigger as $$
-begin
-  new.updated_at = timezone('utc'::text, now());
-  return new;
-end;
-$$ language plpgsql;
-
--- Триггер для game_rooms
-create trigger update_game_rooms_updated_at
-  before update on game_rooms
-  for each row
-  execute function update_updated_at_column();
+alter publication supabase_realtime add table game_rooms;
 
 -- ============================================
 -- Настройка Row Level Security (RLS)
@@ -58,32 +56,51 @@ create trigger update_game_rooms_updated_at
 alter table game_rooms enable row level security;
 alter table players enable row level security;
 
--- Политики для game_rooms
-create policy "Enable read access for all users" on game_rooms
-  for select using (true);
+-- Удаляем старые политики если есть
+drop policy if exists "Enable all access for game_rooms" on game_rooms;
+drop policy if exists "Enable all access for players" on players;
 
-create policy "Enable insert access for all users" on game_rooms
-  for insert with check (true);
+-- Политики для game_rooms - разрешаем всё
+create policy "Enable all access for game_rooms" on game_rooms
+  for all
+  using (true)
+  with check (true);
 
-create policy "Enable update access for all users" on game_rooms
-  for update using (true);
+-- Политики для players - разрешаем всё
+create policy "Enable all access for players" on players
+  for all
+  using (true)
+  with check (true);
 
-create policy "Enable delete access for all users" on game_rooms
-  for delete using (true);
+-- ============================================
+-- Функция для автоматического обновления updated_at
+-- ============================================
 
--- Политики для players
-create policy "Enable read access for all users" on players
-  for select using (true);
+create or replace function update_updated_at_column()
+returns trigger as $$
+begin
+  new.updated_at = timezone('utc'::text, now());
+  return new;
+end;
+$$ language plpgsql;
 
-create policy "Enable insert access for all users" on players
-  for insert with check (true);
+-- Удаляем старый триггер если есть
+drop trigger if exists update_game_rooms_updated_at on game_rooms;
 
-create policy "Enable update access for all users" on players
-  for update using (true);
-
-create policy "Enable delete access for all users" on players
-  for delete using (true);
+-- Создаём триггер
+create trigger update_game_rooms_updated_at
+  before update on game_rooms
+  for each row
+  execute function update_updated_at_column();
 
 -- ============================================
 -- Готово! Теперь мультиплеер должен работать
 -- ============================================
+
+-- Проверка: выводим список таблиц
+select '✅ Таблицы созданы успешно' as status;
+select tablename from pg_tables where schemaname = 'public' and tablename in ('game_rooms', 'players');
+
+-- Проверка: выводим статус Realtime
+select '✅ Realtime включён для таблиц:' as status;
+select tablename from pg_publication_tables where pubname = 'supabase_realtime' and tablename in ('game_rooms', 'players');
