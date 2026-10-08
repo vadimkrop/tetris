@@ -139,7 +139,15 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex flex-col items-center p-2 md:p-4 select-none overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 flex flex-col items-center p-2 md:p-4 select-none overflow-hidden relative">
+      {/* Декоративные элементы фона */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/5 rounded-full blur-3xl" />
+      </div>
+      {/* Контент поверх фона */}
+      <div className="relative z-10 w-full flex flex-col items-center">
       {/* Header with Title and Tutorial Button */}
       <div className="w-full max-w-4xl flex items-center justify-between mb-4 md:mb-6 px-2">
         <h1 className="text-2xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 tracking-wider">
@@ -509,6 +517,7 @@ function App() {
 
       {/* Feedback Widget */}
       <FeedbackWidget />
+      </div>
     </div>
   );
 }
