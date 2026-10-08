@@ -92,10 +92,27 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex flex-col items-center p-2 md:p-4 select-none overflow-hidden">
-      {/* Title */}
-      <h1 className="text-2xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 mb-2 md:mb-6 tracking-wider">
-        ТЕТРИС
-      </h1>
+      {/* Header with Title and Tutorial Button */}
+      <div className="w-full max-w-4xl flex items-center justify-between mb-4 md:mb-6 px-2">
+        <h1 className="text-2xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 tracking-wider">
+          ТЕТРИС
+        </h1>
+        
+        {/* Tutorial Button - Always Visible */}
+        <button
+          onClick={() => setShowTutorial(true)}
+          className="relative group"
+          aria-label="Как играть"
+        >
+          {/* Pulse animation */}
+          <span className="absolute inset-0 rounded-full bg-blue-500 animate-ping opacity-30" />
+          
+          <div className="relative flex items-center gap-2 px-4 py-2 md:px-5 md:py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-full hover:from-blue-400 hover:to-cyan-400 transition-all transform hover:scale-110 shadow-lg shadow-blue-500/50 text-sm md:text-base">
+            <span className="text-xl md:text-2xl">📖</span>
+            <span className="hidden sm:inline">Как играть</span>
+          </div>
+        </button>
+      </div>
 
       {/* Mobile Stats Bar */}
       <div className="md:hidden w-full max-w-sm flex justify-between items-center mb-2 px-2 gap-2">
@@ -115,15 +132,6 @@ function App() {
           <NextPieceDisplay type={nextPiece} />
         </div>
       </div>
-
-      {/* Tutorial Button */}
-      <button
-        onClick={() => setShowTutorial(true)}
-        className="mb-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold rounded-lg hover:from-blue-400 hover:to-cyan-400 transition-all transform hover:scale-105 shadow-lg shadow-blue-500/30 text-sm flex items-center gap-2"
-      >
-        <span className="text-lg">📖</span>
-        <span>Как играть</span>
-      </button>
 
       <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center md:items-start">
         {/* Game Board */}
@@ -254,14 +262,6 @@ function App() {
               ⏸ Пауза
             </button>
           )}
-
-          <button
-            onClick={() => setShowTutorial(true)}
-            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold rounded-lg hover:from-blue-400 hover:to-cyan-400 transition-all transform hover:scale-105 shadow-lg shadow-blue-500/30 text-sm flex items-center justify-center gap-2"
-          >
-            <span>📖</span>
-            <span>Как играть</span>
-          </button>
         </div>
       </div>
 
