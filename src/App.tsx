@@ -2,6 +2,7 @@ import { useTetris } from './hooks/useTetris';
 import { TETROMINOS, TetrominoType, BOARD_WIDTH, BOARD_HEIGHT } from './constants';
 import FeedbackWidget from './components/FeedbackWidget';
 import TutorialModal from './components/TutorialModal';
+import LineClearEffect from './components/LineClearEffect';
 import { useEffect, useState, useCallback } from 'react';
 
 function NextPieceDisplay({ type }: { type: TetrominoType }) {
@@ -137,7 +138,7 @@ function App() {
         {/* Game Board */}
         <div className="relative">
           <div
-            className="border-2 border-purple-500 rounded-lg overflow-hidden shadow-2xl shadow-purple-500/20"
+            className="border-2 border-purple-500 rounded-lg overflow-hidden shadow-2xl shadow-purple-500/20 relative"
             style={{
               width: BOARD_WIDTH * cellSize,
               height: BOARD_HEIGHT * cellSize,
@@ -150,7 +151,7 @@ function App() {
                   {row.map((cell, colIndex) => (
                     <div
                       key={colIndex}
-                      className={`border border-gray-800/50 ${isClearing ? 'animate-pulse' : ''}`}
+                      className={`border border-gray-800/50 ${isClearing ? 'animate-line-clear' : ''}`}
                       style={{
                         width: cellSize,
                         height: cellSize,
@@ -173,6 +174,16 @@ function App() {
                 </div>
               );
             })}
+
+            {/* Эффекты очистки линий */}
+            {clearingRows.map((rowIndex) => (
+              <LineClearEffect
+                key={rowIndex}
+                rowIndex={rowIndex}
+                cellSize={cellSize}
+                boardWidth={BOARD_WIDTH}
+              />
+            ))}
           </div>
 
           {/* Overlays */}
